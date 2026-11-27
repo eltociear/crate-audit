@@ -25,6 +25,9 @@ EXPECT = {
     "mal-revshell": ("CRITICAL", "reverse_shell"),
     "mal-obfuscated": ("CRITICAL", "obfuscation"),
     "mal-worm": ("CRITICAL", "worm_propagation"),
+    "mal-xor-command": ("HIGH", "obfuscation"),       # real rustdecimal shape (RECALL.md)
+    "mal-macro-opener": ("HIGH", "macro_spawn"),      # real better-macro shape
+    "mal-bat-dropper": ("CRITICAL", "dropper"),       # real registry-win shape
 }
 
 

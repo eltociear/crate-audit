@@ -41,7 +41,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 API = os.environ.get("CRATE_AUDIT_API", "https://crates.io/api/v1").rstrip("/")
 STATIC = os.environ.get("CRATE_AUDIT_STATIC", "https://static.crates.io/crates").rstrip("/")
@@ -205,6 +205,15 @@ CHMOD_RE = re.compile(r"set_permissions|PermissionsExt|set_mode\s*\(|\.mode\s*\(
 DYN_EXEC_RE = re.compile(r"Command::new\s*\(\s*(?!\")(?:&\s*)?[\w.:]+(?:\s*\(\s*\))?\s*\)")
 XOR_RE = re.compile(r"\^\s*(?:key|k|KEY|xor\w*)\b|\bxor\w*\s*\(|\.wrapping_sub\s*\(\s*\w+\s*\)\s*\^")
 EXEC_MEM_RE = re.compile(r"PROT_EXEC|PAGE_EXECUTE|transmute::<[^>]*fn\s*\(|memfd_create")
+# command / env-var name computed from a numeric byte-array literal by a helper (rustdecimal:
+# Command::new(Decimal::parse_fn(&vec![73,127,...])) with an XOR key loop)
+ENC_ARG_RE = re.compile(r"(?:Command::new|\.args?|env::var(?:_os)?)\s*\(\s*(?:&\s*)?[\w:]+\s*\(\s*&?\s*(?:vec!\s*)?\[\s*\d{1,3}\s*,\s*\d{1,3}\s*,")
+XOR_INDEX_RE = re.compile(r"\^\s*\w+\s*\[\s*\w+\s*(?:%\s*\w+(?:\.len\(\))?\s*)?\]")
+# URL / file opener spawned from a proc-macro (better-macro: xdg-open at macro expansion)
+OPENER_RE = re.compile(r"Command::new\s*\(\s*\"(?:xdg-open|open|explorer(?:\.exe)?|start|rundll32(?:\.exe)?)\"")
+# a downloaded payload saved / renamed as a script or executable, then run through a shell
+SCRIPT_EXT_RE = re.compile(r"\"[\w.\-]*\.(?:bat|cmd|ps1|vbs|exe|scr|sh|command)\"")
+SHELL_RUN_RE = re.compile(r"Command::new\s*\(\s*\"(?:cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh|(?:/bin/)?(?:ba|z)?sh|wscript|cscript)\"")
 BASE64_DEC_RE = re.compile(r"(?:base64::decode|STANDARD\.decode|general_purpose::\w+\.decode|from_base64)\s*\(")
 SOCK_RE = re.compile(r"TcpStream::connect|UnixStream::connect")
 FD_STDIO_RE = re.compile(r"Stdio::from_raw_fd|Stdio::from\s*\(\s*(?:stream|sock|socket|conn|tcp)\w*")
@@ -295,6 +304,27 @@ def _scan_text(text, path, findings, info, ctx):
                            "Fetches or decodes a payload, marks it executable and runs it"
                            + (" - gated on a CI variable" if sev == "CRITICAL" else ""),
                            path, 0, "", "file-level combination"))
+    # Windows-style dropper: download, save as .bat/.ps1/.exe, run through cmd / powershell
+    if has_net and SCRIPT_EXT_RE.search(text) and SHELL_RUN_RE.search(text) and \
+            re.search(r"File::create|fs::write|fs::rename|fs::copy|write_all", text) and \
+            not any(f["id"] == "dropper" for f in local):
+        local.append(_item("HIGH", "dropper", "Download/Unpack & Execute (dropper)",
+                           "Downloads content, saves it as a script/executable and runs it through a shell",
+                           path, 0, "", "file-level combination"))
+    # command or env-var names decoded at runtime from byte arrays (XOR) = hidden behaviour
+    em = ENC_ARG_RE.search(text)
+    if em and XOR_INDEX_RE.search(text) and "Command::new" in text:
+        n = text.count("\n", 0, em.start()) + 1
+        local.append(_item("HIGH", "obfuscation", "Obfuscated Command",
+                           "Runs a command whose name/arguments are decoded at runtime from XOR-ed byte arrays",
+                           path, n, em.group(0)[:80], lines[n - 1] if n <= len(lines) else ""))
+    # a proc-macro that launches a browser / file opener while your code compiles
+    if ctx == "proc-macro":
+        om = OPENER_RE.search(text)
+        if om:
+            local.append(_item("HIGH", "macro_spawn", "Process Launch at Macro Expansion",
+                               "A procedural macro opens a URL / program (%s) while your code compiles" % om.group(0),
+                               path, text.count("\n", 0, om.start()) + 1, om.group(0), ""))
     # XOR/byte-blob decode + exec / executable memory = obfuscated payload
     if ("byte_blob" in ids or blob) and XOR_RE.search(text) and (EXEC_MEM_RE.search(text) or dyn_exec or
                                                                     "Command::new" in text and build):
@@ -315,7 +345,7 @@ def _scan_text(text, path, findings, info, ctx):
                                    path, 0, "", "file-level"))
         # Build-time escalation: anything HIGH that runs on `cargo build` is CRITICAL
         for f in local:
-            if f["severity"] == "HIGH" and f["id"] not in ("macro_network",):
+            if f["severity"] == "HIGH" and f["id"] not in ("macro_network", "macro_spawn"):
                 f["severity"] = "CRITICAL"
                 f["description"] += " [runs at cargo build]"
             if f["severity"] != "INFO":
