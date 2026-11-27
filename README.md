@@ -47,7 +47,15 @@ scanned too: two of the known crates.io incidents ran at runtime.
 | Exfiltration hosts (Discord/Telegram/Slack webhooks, paste sites, ngrok, OAST, `workers.dev`) **+ network** | HIGH |
 | Wallet / browser / Keychain theft paths | HIGH |
 | DNS exfiltration (hostname / user / env encoded into a lookup) | HIGH |
-| XOR-decoded byte blob that gets executed | HIGH |
+| XOR-decoded byte blob that gets executed; command / env-var names XOR-decoded from byte arrays (rustdecimal) | HIGH |
+| Endpoint or token name hidden as base64, `\xNN` escapes or an ASCII byte list (sha-rust, env-test-guard) | HIGH |
+| Wallet / signing secret (`*PRIVATE_KEY`, mnemonic) from env POSTed to a hard-coded URL (rpc-check) | HIGH |
+| Hard-coded SSH public key + `authorized_keys` (logs-update) | HIGH |
+| Wallet / extension-store / Telegram `tdata` directories walked + network (hesk, sharpnes) | HIGH |
+| Download saved as `.bat` / `.ps1` / `.exe` and run through `cmd` / PowerShell (2023 Windows cluster) | HIGH |
+| Build script: `whoami` / `hostname` + network; `cargo install`; `setsid` / hidden-window launch | HIGH → CRITICAL |
+| Proc-macro that launches a URL opener (better-macro) | HIGH |
+| Dependency that imitates a top-300 crate by trailing digit / separators (`proc-macro1`) | MEDIUM |
 | Network I/O **inside a proc-macro** (at expansion time) | HIGH |
 | Build-script download with **no checksum verification** in the file | MEDIUM |
 | Raw public-IP URLs, TLS verification disabled in build code | MEDIUM |
@@ -64,9 +72,17 @@ the score; risk comes from **combinations** (env walk + network, credential read
 download + chmod + exec) and specific sinks.
 
 Measured on the **1,599 most-downloaded crates** on crates.io (346 of them run code at build time):
-a context-blind pass flags **74 (4.6%)**; `crate-audit` flags **0**. 10 inert malicious canaries,
-modelled on real crates.io incidents, all fire at the right severity.
+a context-blind pass flags **74 (4.6%)**; `crate-audit` flags **0**. Re-measured 2026-11-27 on the
+top 2,098: **0 HIGH+, 0 MEDIUM** (1 HIGH+ before the wave-5 fixes).
 **Full results: [FINDINGS.md](FINDINGS.md).**
+
+**Recall on real malware, not canaries:** we recovered **122 real `.crate` files from 49 crates
+crates.io removed for malicious code** and scanned them. The engine as first published caught
+**23 of 86 payload files (27%)**. With rules frozen on the pre-2026 incidents, the **2026 held-out
+set scored 15/38**: the tune-split fixes did not generalise. Post-freeze fixes bring every
+recovered payload to HIGH+, which is a regression check, not a recall claim. Dependency-only
+compromises (`arrayref` → `proc-macro1`) are visible only as a MEDIUM typosquat hint. 54 removed
+crates could not be recovered at all. **Details, misses and causes: [RECALL.md](RECALL.md).**
 
 ## Usage
 
@@ -89,7 +105,8 @@ Exit code **2** if any target is HIGH or CRITICAL, so it drops straight into CI:
 Runs on Python 3.9+ with only the standard library. Nothing is compiled, built or executed: the
 `.crate` is a gzip tarball read as text.
 
-Tests: `python tests/run.py` (10 malicious canaries, 6 benign controls, 5 unit checks).
+Tests: `python tests/run.py` (19 malicious canaries, 9 of them re-shaped after the real artifacts
+in RECALL.md, 6 benign controls, 5 unit checks).
 
 ## Related
 

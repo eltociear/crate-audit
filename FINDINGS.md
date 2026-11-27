@@ -5,6 +5,11 @@ exact engine, calibrated so that "clean" means clean before any number is report
 as [mcp-audit](https://github.com/eltociear/mcp-audit/blob/main/FINDINGS.md) and
 [npm-audit](https://github.com/eltociear/npm-audit/blob/main/FINDINGS.md).
 
+
+> **2026-11-27 update:** recall is now measured on real malicious `.crate` files, not only on our
+> canaries. See [RECALL.md](RECALL.md). A re-fetch of the top 2,098 crates scored 1 HIGH+
+> before the wave-5 fixes (a docstring in `v8`'s vendored Python) and 0 after.
+
 ## Method
 
 1. Listed the top 1,600 crates by all-time downloads from the crates.io API (`sort=downloads`,

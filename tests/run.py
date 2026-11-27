@@ -28,6 +28,13 @@ EXPECT = {
     "mal-xor-command": ("HIGH", "obfuscation"),       # real rustdecimal shape (RECALL.md)
     "mal-macro-opener": ("HIGH", "macro_spawn"),      # real better-macro shape
     "mal-bat-dropper": ("CRITICAL", "dropper"),       # real registry-win shape
+    # post-freeze rules (wave 5, from real artifacts that the frozen rules missed)
+    "mal-b64-endpoint": ("HIGH", "hidden_endpoint"),  # sha-rust / microsoftsystem64
+    "mal-hex-token": ("HIGH", "hidden_endpoint"),     # env-test-guard
+    "mal-ssh-backdoor": ("HIGH", "ssh_backdoor"),     # logs-update
+    "mal-build-install": ("CRITICAL", "build_install"),  # pretty-changelog-logger
+    "mal-secret-env": ("HIGH", "secret_env_exfil"),   # rpc-check
+    "mal-build-recon": ("CRITICAL", "recon_exfil"),   # jfrog_quotes / custom-req-on-workers
 }
 
 
